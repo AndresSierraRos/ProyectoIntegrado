@@ -29,7 +29,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         "email": emailController.text.trim(),
         "fechaRegistro": Timestamp.now(),
         'descripcion': '',
-        'fotoPerfil': null,
+        'fotoPerfilBase64': null,
+        'rango': 'usuario',
       });
 
       Navigator.pushAndRemoveUntil(

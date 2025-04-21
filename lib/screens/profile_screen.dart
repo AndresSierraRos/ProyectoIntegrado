@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'login_screen.dart';
+import 'dart:convert';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -41,7 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         nombre = doc.data()!.containsKey('nombre') ? doc['nombre'] : '';
         descripcion = doc.data()!.containsKey('descripcion') ? doc['descripcion'] : '';
-        fotoPerfilUrl = doc.data()!.containsKey('fotoPerfil') ? doc['fotoPerfil'] : null;
+        fotoPerfilUrl = doc['fotoPerfilBase64'];
         descripcionController.text = descripcion;
         cargando = false;
       });
@@ -101,21 +102,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> cambiarFotoPerfil() async {
-    final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
-    if (imagen != null) {
-      final ref = FirebaseStorage.instance.ref().child("perfiles/${user!.uid}.jpg");
-      await ref.putFile(File(imagen.path));
-      final url = await ref.getDownloadURL();
+  final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
+  if (imagen != null) {
+    final bytes = await File(imagen.path).readAsBytes();
+    final base64Image = base64Encode(bytes);
 
-      await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
-        'fotoPerfil': url,
-      });
+    await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
+      'fotoPerfilBase64': base64Image,
+    });
 
-      setState(() {
-        fotoPerfilUrl = url;
-      });
-    }
+    setState(() {
+      fotoPerfilUrl = base64Image;
+    });
   }
+}
+
 
   Future<void> eliminarCuenta() async {
   final user = FirebaseAuth.instance.currentUser;
@@ -191,9 +192,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: cambiarFotoPerfil,
               child: CircleAvatar(
                 radius: 60,
-                backgroundImage: fotoPerfilUrl != null
-                    ? NetworkImage(fotoPerfilUrl!)
-                    : const AssetImage('assets/default_profile.jpg') as ImageProvider,
               ),
             ),
             const SizedBox(height: 10),
