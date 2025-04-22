@@ -16,182 +16,196 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   bool isAdmin = false;
   bool cargandoRol = true;
   String? currentUid;
+  bool hasUploaded = false;
+  String tema = 'Cargando...';
+  bool cargandoTema = true;
 
   @override
   void initState() {
     super.initState();
-    verificarAdmin();
+    currentUid = FirebaseAuth.instance.currentUser?.uid;
+    _verificarAdmin();
+    _checkUploadStatus();
+    _cargarTema();
   }
 
-  Future<void> verificarAdmin() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final doc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(user.uid)
-          .get();
+  Future<void> _verificarAdmin() async {
+    if (currentUid == null) {
+      setState(() => cargandoRol = false);
+      return;
+    }
+    final doc = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(currentUid)
+        .get();
+    setState(() {
+      isAdmin = doc.data()?['rango'] == 'admin';
+      cargandoRol = false;
+    });
+  }
+
+  Future<void> _checkUploadStatus() async {
+    if (currentUid == null) return;
+    final snap = await FirebaseFirestore.instance
+        .collection('galeria')
+        .where('usuarioId', isEqualTo: currentUid)
+        .limit(1)
+        .get();
+    setState(() {
+      hasUploaded = snap.docs.isNotEmpty;
+    });
+  }
+
+  Future<void> _cargarTema() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('config')
+        .doc('rally')
+        .get();
+    setState(() {
+      tema = doc.exists ? (doc.data()?['tema'] as String? ?? '') : '';
+      cargandoTema = false;
+    });
+  }
+
+  Future<void> _editarTema() async {
+    final controller = TextEditingController(text: tema);
+    final nuevo = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar tema del rally'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Escribe el nuevo tema'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (nuevo != null && nuevo.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('config')
+          .doc('rally')
+          .set({'tema': nuevo});
       setState(() {
-        isAdmin = (doc.data()?['rango'] ?? '') == 'admin';
-        cargandoRol = false;
+        tema = nuevo;
       });
     }
   }
 
-   /// Para admin: muestra todas las fotos. Para usuario normal: solo aceptadas.
-  Stream<QuerySnapshot> obtenerFotos() {
+  Stream<QuerySnapshot> _obtenerFotos() {
     final coll = FirebaseFirestore.instance.collection('galeria');
     if (isAdmin) {
       return coll.orderBy('timestamp', descending: true).snapshots();
-    } else {
-      return coll
-          .where('estado', isEqualTo: 'aceptado')
-          .orderBy('timestamp', descending: true)
-          .snapshots();
     }
+    return coll
+        .where('estado', isEqualTo: 'aceptado')
+        .orderBy('timestamp', descending: true)
+        .snapshots();
   }
 
-  Future<void> aceptarFoto(String id) async {
+  Future<void> _votarFoto(String id, List<dynamic> votedBy) async {
+    if (currentUid == null || votedBy.contains(currentUid)) return;
+    await FirebaseFirestore.instance.collection('galeria').doc(id).update({
+      'votos': FieldValue.increment(1),
+      'votedBy': FieldValue.arrayUnion([currentUid]),
+    });
+  }
+
+  Future<void> _aceptarFoto(String id) async {
     await FirebaseFirestore.instance
         .collection('galeria')
         .doc(id)
         .update({'estado': 'aceptado'});
   }
 
-  Future<void> rechazarFoto(String id) async {
+  Future<void> _rechazarFoto(String id) async {
     await FirebaseFirestore.instance.collection('galeria').doc(id).delete();
   }
 
-   Future<void> votarFoto(String id, List<dynamic> votedBy) async {
-    if (currentUid == null) return;
-    if (votedBy.contains(currentUid)) {
+  Future<void> _subirFoto() async {
+    if (hasUploaded) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ya has votado esta foto.')),
+        const SnackBar(content: Text('Solo puedes subir una foto.')),
       );
       return;
     }
-    try {
-      await FirebaseFirestore.instance.collection('galeria').doc(id).update({
-        'votos': FieldValue.increment(1),
-        'votedBy': FieldValue.arrayUnion([currentUid])
-      });
-      // Retroalimentación al usuario
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voto registrado.')),
-      );
-      print('Votado: \$id por \$currentUid');
-    } catch (e) {
-      print('Error en votarFoto: \$e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al registrar tu voto.')), 
-      );
-    }
-  }
-
-  Future<void> subirFoto() async {
     final picker = ImagePicker();
     final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
-
-    if (imagen != null) {
-      final bytes = await File(imagen.path).readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      String uploaderName = '';
-      if (uid != null) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('usuarios')
-            .doc(uid)
-            .get();
-        uploaderName = (userDoc.data()?['nombre'] as String?) ?? '';
-      }
-
-      await FirebaseFirestore.instance.collection('galeria').add({
-        'imagen': base64Image,
-        'estado': 'pendiente',
-        'timestamp': FieldValue.serverTimestamp(),
-        'usuarioId': uid,
-        'usuarioNombre': uploaderName,
-        'votos': 0,
-        'votedBy': [],
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto enviada para revisión.')),
-      );
-    }
-  }
-
-  Widget _uploaderNameWidget(String? storedName, String? userId) {
-    if (storedName != null && storedName.isNotEmpty) {
-      return Text(
-        'Subido por: $storedName',
-        style: const TextStyle(
-            color: Colors.white, fontSize: 12),
-        textAlign: TextAlign.center,
-      );
-    }
-    if (userId == null) {
-      return const Text(
-        'Subido por: Desconocido',
-        style: TextStyle(
-            color: Colors.white, fontSize: 12),
-        textAlign: TextAlign.center,
-      );
-    }
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(userId)
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done &&
-            snapshot.data?.exists == true) {
-          final name = (snapshot.data?.data() as Map<String, dynamic>?)?['nombre'] as String?;
-          return Text(
-            'Subido por: ${name ?? 'Desconocido'}',
-            style: const TextStyle(
-                color: Colors.white, fontSize: 12),
-            textAlign: TextAlign.center,
-          );
-        }
-        return const Text(
-          'Subido por: ...',
-          style: TextStyle(
-              color: Colors.white, fontSize: 12),
-          textAlign: TextAlign.center,
-        );
-      },
-    );
+    if (imagen == null || currentUid == null) return;
+    final bytes = await File(imagen.path).readAsBytes();
+    final base64Image = base64Encode(bytes);
+    final userDoc = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(currentUid)
+        .get();
+    final uploaderName = userDoc.data()?['nombre'] as String? ?? 'Desconocido';
+    await FirebaseFirestore.instance.collection('galeria').add({
+      'imagen': base64Image,
+      'estado': 'pendiente',
+      'timestamp': FieldValue.serverTimestamp(),
+      'usuarioId': currentUid,
+      'usuarioNombre': uploaderName,
+      'votos': 0,
+      'votedBy': [],
+    });
+    setState(() {
+      hasUploaded = true;
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Foto enviada para revisión.')));
   }
 
   @override
   Widget build(BuildContext context) {
-    if (cargandoRol) {
+    if (cargandoRol || cargandoTema) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Galería de fotos'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+                const Text('Tema: ', style: TextStyle(fontSize: 16)),
+                Text(tema, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                if (isAdmin) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    onPressed: _editarTema,
+                    tooltip: 'Editar tema',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: obtenerFotos(),
+        stream: _obtenerFotos(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
           final docs = snapshot.data?.docs ?? [];
           if (docs.isEmpty) {
             return const Center(child: Text('No hay fotos disponibles.'));
           }
-
           return GridView.builder(
             padding: const EdgeInsets.all(8),
-            gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               childAspectRatio: 1,
               mainAxisSpacing: 8,
@@ -201,56 +215,28 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
             itemBuilder: (context, index) {
               final doc = docs[index];
               final data = doc.data() as Map<String, dynamic>;
+              final imageId = doc.id;
               final estado = data['estado'] as String? ?? 'pendiente';
-              final imageBase64 = data['imagen'] as String? ?? '';
-              final imageBytes = base64Decode(imageBase64);
-              final storedName = data['usuarioNombre'] as String?;
-              final userId = data['usuarioId'] as String?;
+              final imageBytes = base64Decode(data['imagen'] as String? ?? '');
+              final uploaderName = data['usuarioNombre'] as String? ?? 'Desconocido';
               final votos = data['votos'] as int? ?? 0;
-              final votedBy = data['votedBy'] as List<dynamic>? ?? [];
+              final votedBy = List<String>.from(data['votedBy'] as List<dynamic>? ?? []);
               final hasVoted = currentUid != null && votedBy.contains(currentUid);
-
               return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 clipBehavior: Clip.hardEdge,
                 child: Stack(
                   children: [
-                    Positioned.fill(
-                      child: Image.memory(
-                        imageBytes,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                     Positioned(
-                      bottom: 30,
+                    Positioned.fill(child: Image.memory(imageBytes, fit: BoxFit.cover)),
+                    Positioned(
+                      bottom: 40,
                       right: 8,
                       child: Row(
                         children: [
-                          Text(
-                            '$votos',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          Text('$votos', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                           IconButton(
-                            icon: Icon(
-                              Icons.thumb_up,
-                              color: hasVoted ? Colors.blue : Colors.white,
-                            ),
-                              onPressed: () async {
-                              // Registro simplificado sin comprobación
-                              await FirebaseFirestore.instance
-                                  .collection('galeria')
-                                  .doc(doc.id)
-                                  .update({'votos': FieldValue.increment(1)});
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Voto registrado.')),
-                              );
-                            },
+                            icon: Icon(Icons.thumb_up, color: hasVoted ? Colors.blue : Colors.white),
+                            onPressed: hasVoted ? null : () => _votarFoto(imageId, votedBy),
                           ),
                         ],
                       ),
@@ -260,30 +246,25 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
                       left: 0,
                       right: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                         color: Colors.black.withOpacity(0.5),
-                        child: _uploaderNameWidget(storedName, userId),
+                        child: Text(
+                          'Subido por: $uploaderName',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                     if (isAdmin && estado == 'pendiente')
+                    if (isAdmin && estado == 'pendiente')
                       Positioned(
                         top: 8,
                         right: 8,
                         child: Column(
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.check,
-                                  color: Colors.green),
-                              onPressed: () => aceptarFoto(doc.id),
-                              tooltip: 'Aceptar',
-                            ),
-                            IconButton(
-                              icon:
-                                  const Icon(Icons.close, color: Colors.red),
-                              onPressed: () => rechazarFoto(doc.id),
-                              tooltip: 'Rechazar',
-                            ),
+                            IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _aceptarFoto(imageId)),
+                            IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => _rechazarFoto(imageId)),
                           ],
                         ),
                       ),
@@ -294,15 +275,15 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
           );
         },
       ),
-     bottomNavigationBar: Padding(
+      bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton.icon(
-          onPressed: subirFoto,
+          onPressed: hasUploaded ? null : _subirFoto,
           icon: const Icon(Icons.add_a_photo),
           label: const Text('Añadir foto'),
           style: ElevatedButton.styleFrom(
-            minimumSize: const Size.fromHeight(50), // ocupa todo el ancho
-            backgroundColor: Colors.orange,
+            minimumSize: const Size.fromHeight(50),
+            backgroundColor: hasUploaded ? Colors.grey : Colors.orange,
             textStyle: const TextStyle(fontSize: 16),
           ),
         ),
