@@ -42,7 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         nombre = doc.data()!.containsKey('nombre') ? doc['nombre'] : '';
         descripcion = doc.data()!.containsKey('descripcion') ? doc['descripcion'] : '';
-        fotoPerfilUrl = doc['fotoPerfilBase64'];
+        fotoPerfilUrl = doc['fotoPerfilBase64'] as String?;
         descripcionController.text = descripcion;
         cargando = false;
       });
@@ -191,7 +191,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             GestureDetector(
               onTap: cambiarFotoPerfil,
               child: CircleAvatar(
-                radius: 60,
+              radius: 60,
+              backgroundImage: (() {
+                  if (fotoPerfilUrl == null || fotoPerfilUrl!.isEmpty) {
+                    // nada guardado aún
+                    return const AssetImage('') as ImageProvider;
+                  }
+                  // detectamos si es base64 (empieza por data: o por /9j/ típico JPEG)
+                  final str = fotoPerfilUrl!;
+                  if (str.startsWith('data:image') || str.length > 1000) {
+                    // asumimos que es Base64
+                    final comma = str.indexOf(',');
+                    final payload = comma >= 0 ? str.substring(comma + 1) : str;
+                    final bytes = base64Decode(payload);
+                    return MemoryImage(bytes);
+                  } else {
+                    // si es URL, lo cargamos normal
+                    return NetworkImage(str);
+                  }
+                })(),
               ),
             ),
             const SizedBox(height: 10),
