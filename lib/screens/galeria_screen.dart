@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html;
 
 class GaleriaScreen extends StatefulWidget {
   const GaleriaScreen({super.key});
@@ -102,23 +100,6 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     }
   }
 
-  Future<void> seleccionarImagenWeb(Function(String base64) onSeleccionada) async {
-    final uploadInput = html.FileUploadInputElement()..accept = 'image/*';
-    uploadInput.click();
-
-    uploadInput.onChange.listen((event) async {
-      final file = uploadInput.files?.first;
-      if (file != null) {
-        final reader = html.FileReader();
-        reader.readAsDataUrl(file);
-        reader.onLoadEnd.listen((event) {
-          final base64 = reader.result as String;
-          onSeleccionada(base64);
-        });
-      }
-    });
-  } 
-
   Stream<QuerySnapshot> _obtenerFotos() {
     final coll = FirebaseFirestore.instance.collection('galeria');
     if (isAdmin) {
@@ -150,54 +131,43 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   }
 
   Future<void> _subirFoto() async {
-    if (hasUploaded) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Solo puedes subir una foto.')),
-      );
-      return;
-    }
-
-    void subirConBase64(String base64Image) async {
-      if (base64Image.startsWith('data:image')) {
-        final base64Parts = base64Image.split(',');
-        base64Image = base64Parts.last;
-      }
-
-      if (currentUid == null) return;
-      final userDoc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(currentUid)
-          .get();
-      final uploaderName = userDoc.data()?['nombre'] as String? ?? 'Desconocido';
-      await FirebaseFirestore.instance.collection('galeria').add({
-        'imagen': base64Image,
-        'estado': 'pendiente',
-        'timestamp': FieldValue.serverTimestamp(),
-        'usuarioId': currentUid,
-        'usuarioNombre': uploaderName,
-        'votos': 0,
-        'votedBy': [],
-      });
-
-      setState(() {
-        hasUploaded = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto enviada para revisión.')),
-      );
-    }
-
-    if (kIsWeb) {
-      seleccionarImagenWeb(subirConBase64);
-    } else {
-      final picker = ImagePicker();
-      final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
-      if (imagen == null || currentUid == null) return;
-      final bytes = await File(imagen.path).readAsBytes();
-      final base64Image = base64Encode(bytes);
-      subirConBase64(base64Image);
-    }
+  if (hasUploaded) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Solo puedes subir una foto.')),
+    );
+    return;
   }
+
+  final picker = ImagePicker();
+  final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
+  if (imagen == null || currentUid == null) return;
+
+  final Uint8List imageBytes = await imagen.readAsBytes();
+  final String base64Image = base64Encode(imageBytes);
+
+  final userDoc = await FirebaseFirestore.instance
+      .collection('usuarios')
+      .doc(currentUid)
+      .get();
+  final uploaderName = userDoc.data()?['nombre'] as String? ?? 'Desconocido';
+
+  await FirebaseFirestore.instance.collection('galeria').add({
+    'imagen': base64Image,
+    'estado': 'pendiente',
+    'timestamp': FieldValue.serverTimestamp(),
+    'usuarioId': currentUid,
+    'usuarioNombre': uploaderName,
+    'votos': 0,
+    'votedBy': [],
+  });
+
+  setState(() {
+    hasUploaded = true;
+  });
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Foto enviada para revisión.')),
+  );
+}
 
   @override
   Widget build(BuildContext context) {

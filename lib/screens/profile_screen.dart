@@ -1,13 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'login_screen.dart';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -103,40 +102,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Descripción actualizada")));
   }
 
-  Future<void> seleccionarImagenWeb(Function(String) onSelect) async {
-    final input = html.FileUploadInputElement()..accept = 'image/*';
-    input.click();
-    input.onChange.listen((_) {
-      final file = input.files?.first;
-      if (file == null) return;
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      reader.onLoadEnd.listen((_) {
-        onSelect(reader.result as String);
-      });
-    });
-  }
-
   Future<void> cambiarFotoPerfil() async {
-  if (kIsWeb) {
-    // Selección para web
-    seleccionarImagenWeb((base64ConPrefijo) async {
-      final base64SinPrefijo = _limpiarBase64(base64ConPrefijo);
-
-      await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
-        'fotoPerfilBase64': base64SinPrefijo,
-      });
-
-      setState(() {
-        fotoPerfilUrl = base64SinPrefijo;
-      });
-    });
-  } else {
-    // Selección para móvil
-    final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
+  final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
     if (imagen != null) {
-      final bytes = await File(imagen.path).readAsBytes();
-      final base64SinPrefijo = base64Encode(bytes);
+      final Uint8List imageBytes = await imagen.readAsBytes();
+      final String base64SinPrefijo = base64Encode(imageBytes);
 
       await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
         'fotoPerfilBase64': base64SinPrefijo,
@@ -146,17 +116,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fotoPerfilUrl = base64SinPrefijo;
       });
     }
-  }
-}
-
-// Función que elimina el prefijo 'data:image/...;base64,'
-String _limpiarBase64(String base64ConPrefijo) {
-  final index = base64ConPrefijo.indexOf(',');
-  if (index != -1) {
-    return base64ConPrefijo.substring(index + 1);
-  }
-  return base64ConPrefijo;
-}
+    }
 
   Future<void> eliminarCuenta() async {
   final user = FirebaseAuth.instance.currentUser;
