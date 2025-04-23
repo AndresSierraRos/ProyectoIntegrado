@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'login_screen.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:html' as html;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -101,22 +103,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Descripción actualizada")));
   }
 
+  Future<void> seleccionarImagenWeb(Function(String) onSelect) async {
+    final input = html.FileUploadInputElement()..accept = 'image/*';
+    input.click();
+    input.onChange.listen((_) {
+      final file = input.files?.first;
+      if (file == null) return;
+      final reader = html.FileReader();
+      reader.readAsDataUrl(file);
+      reader.onLoadEnd.listen((_) {
+        onSelect(reader.result as String);
+      });
+    });
+  }
+
   Future<void> cambiarFotoPerfil() async {
-  final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
-  if (imagen != null) {
-    final bytes = await File(imagen.path).readAsBytes();
-    final base64Image = base64Encode(bytes);
+  if (kIsWeb) {
+    // Selección para web
+    seleccionarImagenWeb((base64ConPrefijo) async {
+      final base64SinPrefijo = _limpiarBase64(base64ConPrefijo);
 
-    await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
-      'fotoPerfilBase64': base64Image,
-    });
+      await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
+        'fotoPerfilBase64': base64SinPrefijo,
+      });
 
-    setState(() {
-      fotoPerfilUrl = base64Image;
+      setState(() {
+        fotoPerfilUrl = base64SinPrefijo;
+      });
     });
+  } else {
+    // Selección para móvil
+    final XFile? imagen = await picker.pickImage(source: ImageSource.gallery);
+    if (imagen != null) {
+      final bytes = await File(imagen.path).readAsBytes();
+      final base64SinPrefijo = base64Encode(bytes);
+
+      await FirebaseFirestore.instance.collection('usuarios').doc(user!.uid).update({
+        'fotoPerfilBase64': base64SinPrefijo,
+      });
+
+      setState(() {
+        fotoPerfilUrl = base64SinPrefijo;
+      });
+    }
   }
 }
 
+// Función que elimina el prefijo 'data:image/...;base64,'
+String _limpiarBase64(String base64ConPrefijo) {
+  final index = base64ConPrefijo.indexOf(',');
+  if (index != -1) {
+    return base64ConPrefijo.substring(index + 1);
+  }
+  return base64ConPrefijo;
+}
 
   Future<void> eliminarCuenta() async {
   final user = FirebaseAuth.instance.currentUser;
@@ -188,28 +228,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            GestureDetector(
-              onTap: cambiarFotoPerfil,
-              child: CircleAvatar(
-              radius: 60,
-              backgroundImage: (() {
+           GestureDetector(
+                onTap: cambiarFotoPerfil,
+                child: CircleAvatar(
+                radius: 60,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: (() {
                   if (fotoPerfilUrl == null || fotoPerfilUrl!.isEmpty) {
-                    // nada guardado aún
-                    return const AssetImage('') as ImageProvider;
+                    return null as ImageProvider<Object>?;
                   }
-                  // detectamos si es base64 (empieza por data: o por /9j/ típico JPEG)
-                  final str = fotoPerfilUrl!;
-                  if (str.startsWith('data:image') || str.length > 1000) {
-                    // asumimos que es Base64
-                    final comma = str.indexOf(',');
-                    final payload = comma >= 0 ? str.substring(comma + 1) : str;
-                    final bytes = base64Decode(payload);
-                    return MemoryImage(bytes);
-                  } else {
-                    // si es URL, lo cargamos normal
-                    return NetworkImage(str);
+                  try {
+                    final str = fotoPerfilUrl!;
+                    if (str.startsWith('data:image') || str.length > 1000) {
+                      final comma = str.indexOf(',');
+                      final payload = comma >= 0 ? str.substring(comma + 1) : str;
+                      final bytes = base64Decode(payload);
+                      return MemoryImage(bytes);
+                    } else {
+                      return NetworkImage(str);
+                    }
+                  } catch (e) {
+                    print("Error al cargar imagen de perfil: $e");
+                    return null;
                   }
                 })(),
+                child: (fotoPerfilUrl == null || fotoPerfilUrl!.isEmpty)
+                    ? const Icon(Icons.person, size: 50, color: Colors.white)
+                    : null,
               ),
             ),
             const SizedBox(height: 10),

@@ -75,7 +75,8 @@ class _RankingScreenState extends State<RankingScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Ranking')),
+      appBar: AppBar(title: const Text('Ranking'),
+      automaticallyImplyLeading: false,),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
