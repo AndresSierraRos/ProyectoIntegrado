@@ -31,13 +31,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'descripcion': '',
         'fotoPerfilBase64': null,
         'rango': 'usuario',
+        "estado": "pendiente",
       });
 
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-        (route) => false, // Elimina todas las pantallas anteriores
+       // Cerramos su sesión y avisamos que está pendiente
+      await FirebaseAuth.instance.signOut();
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Registro pendiente"),
+          content: const Text(
+              "Tu cuenta ha sido creada y está pendiente de aprobación por un administrador."),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Aceptar"),
+            ),
+          ],
+        ),
       );
+      Navigator.pop(context); // Volvemos a login
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
     }

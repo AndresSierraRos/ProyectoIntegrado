@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:proyectointegrado/screens/ManageUsersScreen.dart';
 import 'login_screen.dart';
 import 'dart:convert';
 
@@ -16,10 +17,11 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  bool isAdmin = false;
   String nombre = "";
   String descripcion = "";
   String? fotoPerfilUrl;
-  bool cargando = true; // ← añadimos esto
+  bool cargando = true; 
   TextEditingController descripcionController = TextEditingController();
 
   final user = FirebaseAuth.instance.currentUser;
@@ -40,11 +42,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .get();
 
       if (doc.exists) {
+      final data = doc.data()!;
       setState(() {
         nombre = doc.data()!.containsKey('nombre') ? doc['nombre'] : '';
         descripcion = doc.data()!.containsKey('descripcion') ? doc['descripcion'] : '';
         fotoPerfilUrl = doc['fotoPerfilBase64'] as String?;
         descripcionController.text = descripcion;
+        isAdmin = (data['rango'] as String?) == 'admin';
         cargando = false;
       });
       } else {
@@ -253,16 +257,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: const Text("Guardar"),
             ),
             const Spacer(),
-            ElevatedButton.icon(
-              onPressed: eliminarCuenta,
-              icon: const Icon(Icons.delete),
-              label: const Text("Eliminar cuenta"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey[800],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+            if (isAdmin) ...[
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.manage_accounts),
+                label: const Text("Gestionar usuarios"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueGrey,
+                  minimumSize: const Size.fromHeight(50),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ManageUsersScreen()),
+                  );
+                },
               ),
-            ),
+            ],
             const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: () async {

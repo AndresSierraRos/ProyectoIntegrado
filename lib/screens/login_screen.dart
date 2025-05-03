@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'register_screen.dart';
@@ -15,23 +16,56 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
 
   Future<void> login() async {
-  try {
-    final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: emailController.text.trim(),
-      password: passwordController.text.trim(),
-    );
+    try {
+      final cred = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
+      );
 
-    // Verificación de éxito
-    if (userCredential.user != null) {
+      final user = cred.user;
+      if (user == null) return;
+
+      // Comprueba el estado en Firestore
+      final doc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(user.uid)
+          .get();
+
+      final estado = doc.data()?['estado'] as String? ?? 'pendiente';
+
+      if (estado == 'pendiente') {
+        // Cierra sesión y avisa
+        await FirebaseAuth.instance.signOut();
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Cuenta pendiente'),
+            content: const Text(
+                'Tu cuenta todavía está pendiente de aprobación por un administrador.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // Si está aceptado, navega al home
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const BottomtabScreen()),
       );
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: ${e.toString()}")),
+      );
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
   }
-}
 
 
   @override
