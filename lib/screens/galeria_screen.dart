@@ -17,7 +17,8 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   bool cargandoRol = true;
   String? currentUid;
   bool hasUploaded = false;
-  String tema = 'Cargando...';
+
+  String temaActual = '';
   bool cargandoTema = true;
 
   @override
@@ -26,7 +27,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     currentUid = FirebaseAuth.instance.currentUser?.uid;
     _verificarAdmin();
     _checkUploadStatus();
-    _cargarTema();
+    _cargarTemaConcurso();
   }
 
   Future<void> _verificarAdmin() async {
@@ -56,48 +57,17 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     });
   }
 
-  Future<void> _cargarTema() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('config')
-        .doc('rally')
+  Future<void> _cargarTemaConcurso() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('concursos')
+        .where('estado', isEqualTo: 'en_curso')
+        .limit(1)
         .get();
-    setState(() {
-      tema = doc.exists ? (doc.data()?['tema'] as String? ?? '') : '';
-      cargandoTema = false;
-    });
-  }
-
-  Future<void> _editarTema() async {
-    final controller = TextEditingController(text: tema);
-    final nuevo = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar tema del rally'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Escribe el nuevo tema'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-    if (nuevo != null && nuevo.isNotEmpty) {
-      await FirebaseFirestore.instance
-          .collection('config')
-          .doc('rally')
-          .set({'tema': nuevo});
-      setState(() {
-        tema = nuevo;
-      });
+    if (snap.docs.isNotEmpty) {
+      final data = snap.docs.first.data();
+      temaActual = data['tema'] as String? ?? '';
     }
+    setState(() => cargandoTema = false);
   }
 
   Stream<QuerySnapshot> _obtenerFotos() {
@@ -171,7 +141,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (cargandoRol || cargandoTema) {
+    if (cargandoRol) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -179,26 +149,13 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text('Galería de fotos'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                const Text('Tema: ', style: TextStyle(fontSize: 16)),
-                Text(tema, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                if (isAdmin) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
-                    onPressed: _editarTema,
-                    tooltip: 'Editar tema',
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+        title: Row(
+          children: [
+            const Expanded(child: Text('Galería de fotos')),
+            if (temaActual.isNotEmpty)
+              Text('Tema: $temaActual', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          ],
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _obtenerFotos(),

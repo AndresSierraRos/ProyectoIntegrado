@@ -1,7 +1,8 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'Concurso_Screen.dart';
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
 
@@ -13,10 +14,32 @@ class _RankingScreenState extends State<RankingScreen> {
   bool _loading = true;
   List<_RankItem> _items = [];
 
+  // Nuevo: gestión de rol Admin
+  bool _cargandoRol = true;
+  bool _isAdmin = false;
+  String? _currentUid;
+
   @override
   void initState() {
     super.initState();
+    _currentUid = FirebaseAuth.instance.currentUser?.uid;
+    _verificarAdmin();
     _loadRanking();
+  }
+
+  Future<void> _verificarAdmin() async {
+    if (_currentUid == null) {
+      setState(() => _cargandoRol = false);
+      return;
+    }
+    final doc = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(_currentUid)
+        .get();
+    setState(() {
+      _isAdmin = (doc.data()?['rango'] as String?) == 'admin';
+      _cargandoRol = false;
+    });
   }
 
   /// Obtiene fotos aceptadas sin orden en Firestore, y luego ordena en cliente.
@@ -67,6 +90,104 @@ class _RankingScreenState extends State<RankingScreen> {
     });
   }
 
+  Future<void> _iniciarConcurso() async {
+  // Verifica que no haya ya uno en curso
+  final enCurso = await FirebaseFirestore.instance
+      .collection('concursos')
+      .where('estado', isEqualTo: 'en_curso')
+      .limit(1)
+      .get();
+  if (enCurso.docs.isNotEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Ya hay un concurso en curso')),
+    );
+    return;
+  }
+
+  // Pedir tema al admin
+  final temaController = TextEditingController();
+  final tema = await showDialog<String?>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Tema del nuevo concurso'),
+      content: TextField(
+        controller: temaController,
+        decoration: const InputDecoration(hintText: 'Escribe el tema aquí'),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        ElevatedButton(onPressed: () => Navigator.pop(context, temaController.text.trim()), child: const Text('Crear')),
+      ],
+    ),
+  );
+
+  if (tema == null || tema.isEmpty) return;  // si canceló o vacío, no iniciar
+
+  // Crear nuevo concurso con tema
+  await FirebaseFirestore.instance.collection('concursos').add({
+    'inicio': FieldValue.serverTimestamp(),
+    'fin': null,
+    'estado': 'en_curso',
+    'tema': tema,
+    'rankingFinal': [],
+  });
+
+  // Vaciar galería
+  final galSnap = await FirebaseFirestore.instance.collection('galeria').get();
+  final batch = FirebaseFirestore.instance.batch();
+  for (var f in galSnap.docs) batch.delete(f.reference);
+  await batch.commit();
+
+  await _loadRanking();
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Concurso iniciado con tema: "$tema"')),
+  );
+}
+
+  Future<void> _terminarConcurso() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('concursos')
+        .where('estado', isEqualTo: 'en_curso')
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay concurso en curso')),
+      );
+      return;
+    }
+    final concursoRef = snap.docs.first.reference;
+    final galSnap = await FirebaseFirestore.instance
+        .collection('galeria')
+        .where('estado', isEqualTo: 'aceptado')
+        .get();
+    final fotos = galSnap.docs.map((doc) {
+      final d = doc.data();
+      return {
+        'usuarioId': d['usuarioId'],
+        'nombre': d['usuarioNombre'],
+        'votos': d['votos'] as int? ?? 0,
+        'imagen': d['imagen'],
+      };
+    }).toList();
+    fotos.sort((a, b) => (b['votos'] as int).compareTo(a['votos'] as int));
+    await concursoRef.update({
+      'estado': 'finalizado',
+      'fin': FieldValue.serverTimestamp(),
+      'rankingFinal': fotos,
+    });
+    // vaciar galería
+    final batch = FirebaseFirestore.instance.batch();
+    for (var f in galSnap.docs) batch.delete(f.reference);
+    await batch.commit();
+
+    await _loadRanking();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Concurso finalizado y galería vaciada')),
+    );
+  }
+
+  
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -76,7 +197,18 @@ class _RankingScreenState extends State<RankingScreen> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('Ranking'),
-      automaticallyImplyLeading: false,),
+      automaticallyImplyLeading: false,
+       actions: [
+            IconButton(
+              icon: const Icon(Icons.list),
+              tooltip: 'Ver concursos',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ConcursosScreen()),
+              ),
+            ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -129,6 +261,32 @@ class _RankingScreenState extends State<RankingScreen> {
           ],
         ),
       ),
+       bottomNavigationBar: _isAdmin
+          ? Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _iniciarConcurso,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green),
+                      child: const Text('Iniciar concurso'),
+                    ),  
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _terminarConcurso,
+                      style:
+                          ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: const Text('Terminar concurso'),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : null,
     );
   }
 }

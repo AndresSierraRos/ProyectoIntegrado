@@ -264,7 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: const Text("Gestionar usuarios"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blueGrey,
-                  minimumSize: const Size.fromHeight(50),
+                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
                 ),
                 onPressed: () {
                   Navigator.push(
