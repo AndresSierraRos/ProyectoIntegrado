@@ -17,7 +17,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
   bool cargandoRol = true;
   String? currentUid;
   bool hasUploaded = false;
-
+  bool concursoActivo = false;
   String temaActual = '';
   bool cargandoTema = true;
 
@@ -28,6 +28,19 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     _verificarAdmin();
     _checkUploadStatus();
     _cargarTemaConcurso();
+    _verificarConcursoActivo();
+  }
+
+  Future<void> _verificarConcursoActivo() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('concursos')
+        .where('estado', isEqualTo: 'en_curso')
+        .limit(1)
+        .get();
+
+    setState(() {
+      concursoActivo = snapshot.docs.isNotEmpty;
+    });
   }
 
   Future<void> _verificarAdmin() async {
@@ -242,9 +255,11 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton.icon(
-          onPressed: hasUploaded ? null : _subirFoto,
+          onPressed: !concursoActivo || hasUploaded ? null : _subirFoto,
           icon: const Icon(Icons.add_a_photo),
-          label: const Text('Añadir foto'),
+          label: Text(concursoActivo
+            ? (hasUploaded ? 'Ya has subido una foto' : 'Añadir foto')
+            : 'No hay concurso activo'),
           style: ElevatedButton.styleFrom(
             minimumSize: const Size.fromHeight(50),
             backgroundColor: hasUploaded ? Colors.grey : Colors.orange,

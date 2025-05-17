@@ -15,7 +15,6 @@ class _RankingScreenState extends State<RankingScreen> {
   List<_RankItem> _items = [];
 
   // Nuevo: gestión de rol Admin
-  bool _cargandoRol = true;
   bool _isAdmin = false;
   String? _currentUid;
 
@@ -29,7 +28,6 @@ class _RankingScreenState extends State<RankingScreen> {
 
   Future<void> _verificarAdmin() async {
     if (_currentUid == null) {
-      setState(() => _cargandoRol = false);
       return;
     }
     final doc = await FirebaseFirestore.instance
@@ -38,7 +36,6 @@ class _RankingScreenState extends State<RankingScreen> {
         .get();
     setState(() {
       _isAdmin = (doc.data()?['rango'] as String?) == 'admin';
-      _cargandoRol = false;
     });
   }
 

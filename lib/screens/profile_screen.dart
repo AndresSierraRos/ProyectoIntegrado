@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:proyectointegrado/screens/ManageUsersScreen.dart';
-import 'login_screen.dart';
+import 'home_screen.dart';
 import 'dart:convert';
 
 class ProfileScreen extends StatefulWidget {
@@ -120,64 +119,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fotoPerfilUrl = base64SinPrefijo;
       });
     }
-    }
-
-  Future<void> eliminarCuenta() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-
-  final uid = user.uid;
-
-  // Confirmación
-  final confirmar = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Eliminar cuenta"),
-      content: const Text("¿Estás seguro de que quieres eliminar tu cuenta? Esta acción no se puede deshacer."),
-      actions: [
-        TextButton(
-          child: const Text("No"),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-        ElevatedButton(
-          child: const Text("Sí, eliminar"),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-          onPressed: () => Navigator.of(context).pop(true),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmar != true) return;
-
-  try {
-    // Eliminar foto de perfil si existe
-    final fotoRef = FirebaseStorage.instance.ref().child("perfiles/$uid.jpg");
-    try {
-      await fotoRef.delete();
-    } catch (e) {
-      print("No se encontró la foto o ya estaba eliminada.");
-    }
-
-    // Eliminar datos en Firestore
-    await FirebaseFirestore.instance.collection('usuarios').doc(uid).delete();
-
-    // Eliminar cuenta en Auth
-    await user.delete();
-
-    // Redirigir al login
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
-  } catch (e) {
-    print("Error eliminando la cuenta: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("No se pudo eliminar la cuenta. Intenta iniciar sesión de nuevo si es necesario.")),
-    );
   }
-}
+
 
   @override
   Widget build(BuildContext context) {
@@ -280,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 await FirebaseAuth.instance.signOut();
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
                   (route) => false,
                 );
               },

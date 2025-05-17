@@ -15,15 +15,6 @@ class HomeScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               const SizedBox(height: 60),
-
-              // 🖼️ Imagen superior
-              Image.asset(
-                'assets/logo.png', // Asegúrate de tener esta imagen en tu proyecto
-                height: 150,
-              ),
-
-              const SizedBox(height: 60),
-
               // 🟧 Botón de inicio de sesión
               ElevatedButton(
                 onPressed: () {
