@@ -38,7 +38,7 @@ class ResultadoConcursoScreen extends StatelessWidget {
                   // Intentamos decodificar la foto de perfil en base64
                   Widget avatar;
                   try {
-                    final bytes = base64Decode(item['fotoPerfilBase64'] as String);
+                    final bytes = base64Decode(item['imagen'] as String);
                     avatar = CircleAvatar(
                       radius: 40,
                       backgroundImage: MemoryImage(bytes),

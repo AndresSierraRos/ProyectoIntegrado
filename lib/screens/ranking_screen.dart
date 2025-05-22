@@ -143,14 +143,6 @@ class _RankingScreenState extends State<RankingScreen> {
       'tema': tema,
       'rankingFinal': [],
     });
-
-    // 4) Vaciar galería
-    final galSnap =
-        await FirebaseFirestore.instance.collection('galeria').get();
-    final batch = FirebaseFirestore.instance.batch();
-    for (var f in galSnap.docs) batch.delete(f.reference);
-    await batch.commit();
-
     // 5) Refrescar ranking y notificar
     await _loadRanking();
     ScaffoldMessenger.of(context).showSnackBar(
