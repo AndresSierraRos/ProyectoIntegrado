@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'Concurso_Screen.dart';
+
+/// Pantalla que muestra el ranking actual de la galería,
+/// permite a admin iniciar/terminar concursos y a todos los usuarios ver posiciones.
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
 
@@ -11,25 +14,24 @@ class RankingScreen extends StatefulWidget {
 }
 
 class _RankingScreenState extends State<RankingScreen> {
-  bool _loading = true;
-  List<_RankItem> _items = [];
+  bool _loading = true;            // Para mostrar indicador mientras carga datos
+  List<_RankItem> _items = [];     // Lista de participantes ordenados por votos
 
-  // Nuevo: gestión de rol Admin
-  bool _isAdmin = false;
-  String? _currentUid;
+  bool _isAdmin = false;           // Flag para saber si el usuario es administrador
+  String? _currentUid;             // UID del usuario actual
 
   @override
   void initState() {
     super.initState();
+    // Obtener UID y comprobar rol/admin, luego cargar ranking
     _currentUid = FirebaseAuth.instance.currentUser?.uid;
     _verificarAdmin();
     _loadRanking();
   }
 
+  /// Consulta Firestore para ver si el usuario actual tiene rango 'admin'
   Future<void> _verificarAdmin() async {
-    if (_currentUid == null) {
-      return;
-    }
+    if (_currentUid == null) return;
     final doc = await FirebaseFirestore.instance
         .collection('usuarios')
         .doc(_currentUid)
@@ -39,18 +41,19 @@ class _RankingScreenState extends State<RankingScreen> {
     });
   }
 
-  /// Obtiene fotos aceptadas sin orden en Firestore, y luego ordena en cliente.
+  /// Carga todas las fotos con estado "aceptado", las transforma en items,
+  /// recupera nombre/foto de perfil del autor, ordena por votos y toma top10.
   Future<void> _loadRanking() async {
     setState(() => _loading = true);
 
-    // Obtener todas las fotos aceptadas
+    // 1) Traer fotos aceptadas
     final snapshot = await FirebaseFirestore.instance
         .collection('galeria')
         .where('estado', isEqualTo: 'aceptado')
         .get();
 
-    // Transformar en lista de items con votos
     final List<_RankItem> items = [];
+    // 2) Para cada foto, buscar datos de usuario y crear objeto _RankItem
     for (var doc in snapshot.docs) {
       final data = doc.data();
       final votos = data['votos'] as int? ?? 0;
@@ -59,8 +62,10 @@ class _RankingScreenState extends State<RankingScreen> {
       String? fotoBase64;
 
       if (userId != null) {
-        final userDoc =
-            await FirebaseFirestore.instance.collection('usuarios').doc(userId).get();
+        final userDoc = await FirebaseFirestore.instance
+            .collection('usuarios')
+            .doc(userId)
+            .get();
         final userData = userDoc.data();
         if (userData != null) {
           nombre = userData['nombre'] as String? ?? nombre;
@@ -75,10 +80,9 @@ class _RankingScreenState extends State<RankingScreen> {
       ));
     }
 
-    // Ordenar cliente por votos desc
+    // 3) Ordenar lista de mayor a menor votos
     items.sort((a, b) => b.votos.compareTo(a.votos));
-
-    // Tomar top 10
+    // 4) Tomar solo los 10 primeros (o menos si hay menos)
     final top10 = items.length > 10 ? items.sublist(0, 10) : items;
 
     setState(() {
@@ -87,61 +91,80 @@ class _RankingScreenState extends State<RankingScreen> {
     });
   }
 
+  /// Inicia un nuevo concurso:
+  /// - Verifica que no haya uno en curso
+  /// - Pide tema al admin vía diálogo
+  /// - Crea documento en 'concursos' con estado "en_curso" y tema
+  /// - Vacía la colección 'galeria' para el nuevo concurso
   Future<void> _iniciarConcurso() async {
-  // Verifica que no haya ya uno en curso
-  final enCurso = await FirebaseFirestore.instance
-      .collection('concursos')
-      .where('estado', isEqualTo: 'en_curso')
-      .limit(1)
-      .get();
-  if (enCurso.docs.isNotEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ya hay un concurso en curso')),
+    // 1) Comprobar concurso en curso
+    final enCurso = await FirebaseFirestore.instance
+        .collection('concursos')
+        .where('estado', isEqualTo: 'en_curso')
+        .limit(1)
+        .get();
+    if (enCurso.docs.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ya hay un concurso en curso')),
+      );
+      return;
+    }
+
+    // 2) Pedir tema al admin
+    final temaController = TextEditingController();
+    final tema = await showDialog<String?>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Tema del nuevo concurso'),
+        content: TextField(
+          controller: temaController,
+          decoration: const InputDecoration(hintText: 'Escribe el tema aquí'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(context, temaController.text.trim()),
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
     );
-    return;
+    if (tema == null || tema.isEmpty) return;
+
+    // 3) Crear documento del concurso
+    await FirebaseFirestore.instance.collection('concursos').add({
+      'inicio': FieldValue.serverTimestamp(),
+      'fin': null,
+      'estado': 'en_curso',
+      'tema': tema,
+      'rankingFinal': [],
+    });
+
+    // 4) Vaciar galería
+    final galSnap =
+        await FirebaseFirestore.instance.collection('galeria').get();
+    final batch = FirebaseFirestore.instance.batch();
+    for (var f in galSnap.docs) batch.delete(f.reference);
+    await batch.commit();
+
+    // 5) Refrescar ranking y notificar
+    await _loadRanking();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Concurso iniciado con tema: "$tema"')),
+    );
   }
 
-  // Pedir tema al admin
-  final temaController = TextEditingController();
-  final tema = await showDialog<String?>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Tema del nuevo concurso'),
-      content: TextField(
-        controller: temaController,
-        decoration: const InputDecoration(hintText: 'Escribe el tema aquí'),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        ElevatedButton(onPressed: () => Navigator.pop(context, temaController.text.trim()), child: const Text('Crear')),
-      ],
-    ),
-  );
-
-  if (tema == null || tema.isEmpty) return;  // si canceló o vacío, no iniciar
-
-  // Crear nuevo concurso con tema
-  await FirebaseFirestore.instance.collection('concursos').add({
-    'inicio': FieldValue.serverTimestamp(),
-    'fin': null,
-    'estado': 'en_curso',
-    'tema': tema,
-    'rankingFinal': [],
-  });
-
-  // Vaciar galería
-  final galSnap = await FirebaseFirestore.instance.collection('galeria').get();
-  final batch = FirebaseFirestore.instance.batch();
-  for (var f in galSnap.docs) batch.delete(f.reference);
-  await batch.commit();
-
-  await _loadRanking();
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Concurso iniciado con tema: "$tema"')),
-  );
-}
-
+  /// Termina el concurso en curso:
+  /// - Obtiene el concurso "en_curso"
+  /// - Recoge fotos aceptadas, arma lista de rankingFinal
+  /// - Actualiza el concurso a "finalizado" con fin y rankingFinal
+  /// - Vacía la galería
   Future<void> _terminarConcurso() async {
+    // 1) Buscar concurso en curso
     final snap = await FirebaseFirestore.instance
         .collection('concursos')
         .where('estado', isEqualTo: 'en_curso')
@@ -154,6 +177,8 @@ class _RankingScreenState extends State<RankingScreen> {
       return;
     }
     final concursoRef = snap.docs.first.reference;
+
+    // 2) Recoger todas las fotos aceptadas
     final galSnap = await FirebaseFirestore.instance
         .collection('galeria')
         .where('estado', isEqualTo: 'aceptado')
@@ -167,43 +192,51 @@ class _RankingScreenState extends State<RankingScreen> {
         'imagen': d['imagen'],
       };
     }).toList();
+    // 3) Ordenar fotos por votos descendente
     fotos.sort((a, b) => (b['votos'] as int).compareTo(a['votos'] as int));
+
+    // 4) Actualizar concurso con fin y rankingFinal
     await concursoRef.update({
       'estado': 'finalizado',
       'fin': FieldValue.serverTimestamp(),
       'rankingFinal': fotos,
     });
-    // vaciar galería
+
+    // 5) Vaciar galería de nuevo
     final batch = FirebaseFirestore.instance.batch();
     for (var f in galSnap.docs) batch.delete(f.reference);
     await batch.commit();
 
+    // 6) Refrescar ranking y notificar
     await _loadRanking();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Concurso finalizado y galería vaciada')),
     );
   }
 
-  
   @override
   Widget build(BuildContext context) {
+    // Mientras carga datos muestra un spinner
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Ranking'),
-      automaticallyImplyLeading: false,
-       actions: [
-            IconButton(
-              icon: const Icon(Icons.list),
-              tooltip: 'Ver concursos',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ConcursosScreen()),
-              ),
+      appBar: AppBar(
+        title: const Text('Ranking'),
+        automaticallyImplyLeading: false,
+        actions: [
+          // Botón para ver lista de concursos
+          IconButton(
+            icon: const Icon(Icons.list),
+            tooltip: 'Ver concursos',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ConcursosScreen()),
             ),
+          ),
         ],
       ),
       body: Padding(
@@ -211,7 +244,7 @@ class _RankingScreenState extends State<RankingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // TOP hasta 3 (incluso si <3)
+            // Sección TOP 3 (o menos si no hay suficientes)
             if (_items.isNotEmpty) ...[
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -224,14 +257,22 @@ class _RankingScreenState extends State<RankingScreen> {
                         : null;
                     return Column(
                       children: [
+                        // Avatar con foto de perfil o placeholder
                         CircleAvatar(
                           radius: 40,
-                            backgroundImage: bytes != null ? MemoryImage(bytes) : null,
-                            backgroundColor: bytes != null ? null : Colors.grey,
-                            child: bytes == null ? const Icon(Icons.person, color: Colors.white, size: 40) : null,
+                          backgroundImage:
+                              bytes != null ? MemoryImage(bytes) : null,
+                          backgroundColor:
+                              bytes != null ? null : Colors.grey,
+                          child: bytes == null
+                              ? const Icon(Icons.person,
+                                  color: Colors.white, size: 40)
+                              : null,
                         ),
                         const SizedBox(height: 8),
-                        Text('#${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('#${i + 1}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                         Text(item.nombre),
                         Text('${item.votos} votos'),
                       ],
@@ -241,7 +282,7 @@ class _RankingScreenState extends State<RankingScreen> {
               ),
               const SizedBox(height: 24),
             ],
-            // Resto 4 a 10
+            // Lista de posiciones 4 a 10
             Expanded(
               child: ListView.builder(
                 itemCount: _items.length > 3 ? _items.length - 3 : 0,
@@ -258,7 +299,8 @@ class _RankingScreenState extends State<RankingScreen> {
           ],
         ),
       ),
-       bottomNavigationBar: _isAdmin
+      // Botones de admin para iniciar/terminar concurso
+      bottomNavigationBar: _isAdmin
           ? Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -269,7 +311,7 @@ class _RankingScreenState extends State<RankingScreen> {
                       style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green),
                       child: const Text('Iniciar concurso'),
-                    ),  
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -288,6 +330,10 @@ class _RankingScreenState extends State<RankingScreen> {
   }
 }
 
+/// Modelo que representa cada entrada en el ranking:
+/// - nombre: nombre del usuario
+/// - votos: número de votos obtenidos
+/// - fotoBase64: cadena base64 de la foto de perfil (opcional)
 class _RankItem {
   final String nombre;
   final int votos;

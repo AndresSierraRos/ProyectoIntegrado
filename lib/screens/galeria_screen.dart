@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 
+// Pantalla que muestra la galería de fotos del concurso
 class GaleriaScreen extends StatefulWidget {
   const GaleriaScreen({super.key});
 
@@ -31,6 +32,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     _verificarConcursoActivo();
   }
 
+  // Verifica si hay un concurso activo
   Future<void> _verificarConcursoActivo() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('concursos')
@@ -43,6 +45,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     });
   }
 
+  // Verifica si el usuario actual tiene rol "admin"
   Future<void> _verificarAdmin() async {
     if (currentUid == null) {
       setState(() => cargandoRol = false);
@@ -58,6 +61,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     });
   }
 
+   // Revisa si el usuario ya subió una foto
   Future<void> _checkUploadStatus() async {
     if (currentUid == null) return;
     final snap = await FirebaseFirestore.instance
@@ -70,6 +74,8 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     });
   }
 
+  
+  // Carga el tema del concurso activo
   Future<void> _cargarTemaConcurso() async {
     final snap = await FirebaseFirestore.instance
         .collection('concursos')
@@ -83,6 +89,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     setState(() => cargandoTema = false);
   }
 
+  // Obtiene el stream de fotos según si es admin o no
   Stream<QuerySnapshot> _obtenerFotos() {
     final coll = FirebaseFirestore.instance.collection('galeria');
     if (isAdmin) {
@@ -94,6 +101,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
         .snapshots();
   }
 
+  // Votar una foto (solo si no ha votado antes)
   Future<void> _votarFoto(String id, List<dynamic> votedBy) async {
     if (currentUid == null || votedBy.contains(currentUid)) return;
     await FirebaseFirestore.instance.collection('galeria').doc(id).update({
@@ -102,6 +110,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
     });
   }
 
+  // Admin: aceptar una foto (cambiar estado a "aceptado")
   Future<void> _aceptarFoto(String id) async {
     await FirebaseFirestore.instance
         .collection('galeria')
@@ -109,10 +118,12 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
         .update({'estado': 'aceptado'});
   }
 
+  // Admin: rechazar una foto (eliminarla)
   Future<void> _rechazarFoto(String id) async {
     await FirebaseFirestore.instance.collection('galeria').doc(id).delete();
   }
 
+  // Subir una foto a la galería
   Future<void> _subirFoto() async {
   if (hasUploaded) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -204,7 +215,9 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
                 clipBehavior: Clip.hardEdge,
                 child: Stack(
                   children: [
+                    // Imagen cargada
                     Positioned.fill(child: Image.memory(imageBytes, fit: BoxFit.cover)),
+                    // Botón de votos
                     Positioned(
                       bottom: 40,
                       right: 8,
@@ -218,6 +231,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
                         ],
                       ),
                     ),
+                     // Nombre del autor
                     Positioned(
                       bottom: 0,
                       left: 0,
@@ -234,6 +248,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
                         ),
                       ),
                     ),
+                    // Botones de aceptar/rechazar (solo para admins)
                     if (isAdmin && estado == 'pendiente')
                       Positioned(
                         top: 8,
@@ -252,6 +267,7 @@ class _GaleriaScreenState extends State<GaleriaScreen> {
           );
         },
       ),
+       // Botón para subir foto
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton.icon(

@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'register_screen.dart';
 import 'BottomTab_Screen.dart';
 
+/// Pantalla de inicio de sesión.
+/// Permite al usuario autenticarse con email/contraseña,
+/// verifica que la cuenta esté aprobada en Firestore y maneja errores.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -12,34 +15,43 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Controladores para los campos de texto
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
+  /// Método principal de login:
+  /// 1. Intenta autenticar con Firebase Auth.
+  /// 2. Verifica en Firestore el campo 'estado' (pendiente/aceptado).
+  /// 3. Si está pendiente, cierra sesión y alerta al usuario.
+  /// 4. Si está aceptado, navega al BottomTabScreen.
+  /// 5. Captura y muestra mensajes amigables para errores de FirebaseAuth.
   Future<void> login() async {
     try {
+      // 1) Autenticación con email y contraseña
       final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
       final user = cred.user;
-      if (user == null) return;
+      if (user == null) return; // Si no devuelve usuario, termina
 
-      // Comprueba el estado en Firestore
+      // 2) Consultar estado en Firestore
       final doc = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(user.uid)
           .get();
       final estado = doc.data()?['estado'] as String? ?? 'pendiente';
 
+      // 3) Si está pendiente, cerrar sesión y mostrar diálogo
       if (estado == 'pendiente') {
-        // Cierra sesión y avisa
         await FirebaseAuth.instance.signOut();
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Cuenta pendiente'),
             content: const Text(
-                'Tu cuenta todavía está pendiente de aprobación por un administrador.'),
+              'Tu cuenta todavía está pendiente de aprobación por un administrador.'
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -51,13 +63,15 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // Si está aceptado, navega al home
+      // 4) Estado aceptado: navegar al Home (BottomTabScreen)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const BottomtabScreen()),
       );
 
-    } on FirebaseAuthException catch (e) {
+    }
+    // Manejo de errores específicos de Firebase Auth
+    on FirebaseAuthException catch (e) {
       String mensaje;
       switch (e.code) {
         case 'invalid-email':
@@ -78,7 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
         default:
           mensaje = 'Error al iniciar sesión. Inténtalo de nuevo.';
       }
-      // Mostrar diálogo de error
+      // Mostrar diálogo de error con mensaje amigable
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -92,8 +106,9 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
       );
-    } catch (e) {
-      // Error inesperado
+    }
+    // Captura cualquier otro error no previsto
+    catch (e) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -113,6 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // AppBar sin flecha de volver
       appBar: AppBar(
         title: const Text("Inicio Sesión"),
         automaticallyImplyLeading: false,
@@ -122,16 +138,19 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Campo de correo
             TextField(
               controller: emailController,
               decoration: const InputDecoration(labelText: "Correo"),
             ),
+            // Campo de contraseña (oculta texto)
             TextField(
               controller: passwordController,
               decoration: const InputDecoration(labelText: "Contraseña"),
               obscureText: true,
             ),
             const SizedBox(height: 24),
+            // Botón de inicio de sesión
             ElevatedButton(
               onPressed: login,
               child: const Text("Inicio de sesión"),
@@ -143,15 +162,18 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             const SizedBox(height: 20),
+            // Pie: enlace a registro
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text("¿No tienes cuenta? "),
                 GestureDetector(
                   onTap: () {
+                    // Navegar a pantalla de registro
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const RegisterScreen()),
                     );
                   },
                   child: const Text(

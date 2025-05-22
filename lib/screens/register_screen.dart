@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Pantalla de registro de nuevos usuarios.
+/// Permite al usuario introducir nombre, correo y contraseña,
+/// crea la cuenta con Firebase Auth y la guarda en Firestore.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -10,19 +13,26 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  // Controladores para los campos de texto
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
+  /// Método que se encarga de registrar al usuario:
+  /// 1. Crea la cuenta en Firebase Auth.
+  /// 2. Guarda los datos iniciales en la colección "usuarios" de Firestore.
+  /// 3. Cierra sesión y muestra un diálogo informando que está pendiente de aprobación.
+  /// 4. Maneja errores específicos de FirebaseAuthException para mostrar mensajes amigables.
   Future<void> register() async {
     try {
+      // 1. Crear cuenta en Firebase Auth
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
-      // Guardar en Firestore
+      // 2. Guardar datos en Firestore bajo "usuarios/{uid}"
       await FirebaseFirestore.instance
           .collection("usuarios")
           .doc(userCredential.user!.uid)
@@ -34,10 +44,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'descripcion': '',
         'fotoPerfilBase64': null,
         'rango': 'usuario',
-        "estado": "pendiente",
+        "estado": "pendiente", 
       });
 
-      // Cerrar sesión y notificar
+      // 3. Cerrar la sesión recién creada y notificar al usuario
       await FirebaseAuth.instance.signOut();
       await showDialog(
         context: context,
@@ -53,9 +63,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
         ),
       );
-      Navigator.pop(context); // Volver al login
+      // Volver a la pantalla de login
+      Navigator.pop(context);
 
-    } on FirebaseAuthException catch (e) {
+    }
+    // Capturar errores específicos de Firebase Auth
+    on FirebaseAuthException catch (e) {
       String mensaje;
       switch (e.code) {
         case 'invalid-email':
@@ -77,7 +90,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         default:
           mensaje = 'Error al registrar: ${e.message}';
       }
-      // Mostrar diálogo de error
+      // Mostrar diálogo con el mensaje de error
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -91,8 +104,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
         ),
       );
-    } catch (e) {
-      // Cualquier otro error inesperado
+    }
+    // Cualquier otro error no previsto
+    catch (e) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -114,27 +128,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Registro"),
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: false, // Sin botón de volver
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
+        // Columna centrada con los campos de input y el botón
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Campo para el nombre
             TextField(
               controller: nameController,
               decoration: const InputDecoration(labelText: "Nombre"),
             ),
+            // Campo para el correo
             TextField(
               controller: emailController,
               decoration: const InputDecoration(labelText: "Correo"),
             ),
+            // Campo para la contraseña
             TextField(
               controller: passwordController,
               decoration: const InputDecoration(labelText: "Contraseña"),
-              obscureText: true,
+              obscureText: true, // Oculta el texto ingresado
             ),
             const SizedBox(height: 24),
+            // Botón de registro
             ElevatedButton(
               onPressed: register,
               child: const Text("Registrarse"),
